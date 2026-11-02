@@ -1,18 +1,18 @@
-/* 
-    Copyright (C) 2025  Serge Alagon
+/*
+Copyright (C) 2025 Serge Alagon
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #import <objc/runtime.h>
@@ -38,20 +38,20 @@ void new_sceneID_updateWithSettingsDiff_transitionContext_completion(id self, SE
 
     NSString *diffDescription = [arg2 description];
 
-    if ([diffDescription containsString:@"foreground = NotSet"] || 
-        [diffDescription containsString:@"foreground = No"] || 
-        [diffDescription containsString:@"foreground = BSSettingFlagNo"] || 
-        [diffDescription containsString:@"foreground = NO"]) { 
+    if ([diffDescription containsString:@"foreground = NotSet"] ||
+        [diffDescription containsString:@"foreground = No"] ||
+        [diffDescription containsString:@"foreground = BSSettingFlagNo"] ||
+        [diffDescription containsString:@"foreground = NO"]) {
         return;
     }
 
-    if ([diffDescription containsString:@"hostContextIdentifierForSnapshotting = 0"] || 
+    if ([diffDescription containsString:@"hostContextIdentifierForSnapshotting = 0"] ||
         [diffDescription containsString:@"scenePresenterRenderIdentifierForSnapshotting = 0"] ||
-        [diffDescription containsString:@"targetOfEventDeferringEnvironments = (empty)"]) { 
+        [diffDescription containsString:@"targetOfEventDeferringEnvironments = (empty)"]) {
         return;
     }
-    
-    if ([diffDescription containsString:@"FBSceneSnapshotAction:"]) { 
+
+    if ([diffDescription containsString:@"FBSceneSnapshotAction:"]) {
         return;
     }
 
@@ -61,6 +61,7 @@ void new_sceneID_updateWithSettingsDiff_transitionContext_completion(id self, SE
 // MARK: - Notification & Background Overrides
 
 static UIApplicationState (*orig_applicationState)(id, SEL);
+
 static UIApplicationState hook_applicationState(id self, SEL _cmd) {
     if (isPhysicallyInBackground) {
         void *returnAddress = __builtin_extract_return_addr(__builtin_return_address(0));
@@ -71,12 +72,13 @@ static UIApplicationState hook_applicationState(id self, SEL _cmd) {
                 return UIApplicationStateBackground;
             }
         }
-        return UIApplicationStateActive; 
+        return UIApplicationStateActive;
     }
     return orig_applicationState ? orig_applicationState(self, _cmd) : UIApplicationStateActive;
 }
 
 static void (*orig_willPresent)(id, SEL, UNUserNotificationCenter *, UNNotification *, void (^)(UNNotificationPresentationOptions));
+
 static void hook_willPresent(id self, SEL _cmd, UNUserNotificationCenter *center, UNNotification *notification, void (^completionHandler)(UNNotificationPresentationOptions options)) {
     if (isPhysicallyInBackground) {
         completionHandler(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionSound | UNNotificationPresentationOptionBadge);
@@ -86,8 +88,10 @@ static void hook_willPresent(id self, SEL _cmd, UNUserNotificationCenter *center
 }
 
 static void (*orig_setDelegate)(id, SEL, id<UNUserNotificationCenterDelegate>);
+
 static void hook_setDelegate(id self, SEL _cmd, id<UNUserNotificationCenterDelegate> delegate) {
     if (orig_setDelegate) orig_setDelegate(self, _cmd, delegate);
+
     if (delegate) {
         Class delegateClass = [delegate class];
         SEL sel = @selector(userNotificationCenter:willPresentNotification:withCompletionHandler:);
@@ -110,7 +114,6 @@ static void setup() {
         Class targetClass = objc_getClass("FBSWorkspaceScenesClient");
         SEL originalSelector = @selector(sceneID:updateWithSettingsDiff:transitionContext:completion:);
         Method originalMethod = class_getInstanceMethod(targetClass, originalSelector);
-
         if (originalMethod) {
             original_sceneID_updateWithSettingsDiff_transitionContext_completion = (void (*)(id, SEL, id, id, id, id))method_getImplementation(originalMethod);
             method_setImplementation(originalMethod, (IMP)new_sceneID_updateWithSettingsDiff_transitionContext_completion);
@@ -136,12 +139,18 @@ static void setup() {
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil usingBlock:^(NSNotification * _Nonnull note) {
             isPhysicallyInBackground = YES;
         }];
-        
+
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:nil usingBlock:^(NSNotification * _Nonnull note) {
             isPhysicallyInBackground = NO;
         }];
 
+        // PATCH: re-show the floating button whenever the app becomes active again
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil usingBlock:^(NSNotification * _Nonnull note) {
+            [[FloatingButtonWindow sharedInstance] showButton];
+        }];
+
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)prefsChanged, CFSTR("com.sergy.immortalizerjailed.updateprefs"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+
         [[FloatingButtonWindow sharedInstance] showButton];
     });
 }
