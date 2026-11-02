@@ -1,19 +1,20 @@
-/* 
-    Copyright (C) 2025  Serge Alagon
+/*
+Copyright (C) 2025 Serge Alagon
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
+
 #import "FloatingButtonWindow.h"
 
 @interface FloatingButtonWindow ()
@@ -80,12 +81,12 @@ static void vibrateDevice() {
 
     UIImage *icon = [UIImage systemImageNamed:@"hourglass.tophalf.fill"];
     [_floatingButton setImage:icon forState:UIControlStateNormal];
-    
+
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
     [_floatingButton addGestureRecognizer:pan];
-    
+
     [_floatingButton addTarget:self action:@selector(buttonTapped) forControlEvents:UIControlEventTouchUpInside];
-    
+
     [self.rootViewController.view addSubview:_floatingButton];
     [self snapButtonToNearestEdge:_floatingButton];
 }
@@ -96,11 +97,11 @@ static void vibrateDevice() {
     _handleView.layer.cornerRadius = 6;
     _handleView.layer.masksToBounds = YES;
     _handleView.alpha = 0;
-    _handleView.hidden = YES;  
+    _handleView.hidden = YES;
 
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake((_handleView.frame.size.width - 2)/2, 
-                                                          (_handleView.frame.size.height - 30)/2, 
-                                                          3, 30)];
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake((_handleView.frame.size.width - 2)/2,
+                                                            (_handleView.frame.size.height - 30)/2,
+                                                            3, 30)];
     line.backgroundColor = [UIColor whiteColor];
     line.layer.cornerRadius = 1;
     line.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
@@ -108,7 +109,7 @@ static void vibrateDevice() {
 
     UIPanGestureRecognizer *handlePan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleHandlePan:)];
     [_handleView addGestureRecognizer:handlePan];
-    
+
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(undockButton)];
     [_handleView addGestureRecognizer:tap];
 
@@ -124,15 +125,15 @@ static void vibrateDevice() {
 
 - (void)handlePan:(UIPanGestureRecognizer *)gesture {
     [self resetDockTimer];
-    
+
     CGPoint translation = [gesture translationInView:self];
-    
+
     [UIView animateWithDuration:0.2 animations:^{
         gesture.view.center = CGPointMake(gesture.view.center.x + translation.x,
-                                        gesture.view.center.y + translation.y);
+                                          gesture.view.center.y + translation.y);
         [gesture setTranslation:CGPointZero inView:self];
     }];
-    
+
     if (gesture.state == UIGestureRecognizerStateEnded) {
         [self snapButtonToNearestEdge:(UIButton *)gesture.view];
         [self startDockTimer];
@@ -141,17 +142,17 @@ static void vibrateDevice() {
 
 - (void)handleHandlePan:(UIPanGestureRecognizer *)gesture {
     CGPoint translation = [gesture translationInView:self];
-    
+
     if (gesture.state == UIGestureRecognizerStateBegan) {
         [self undockButton];
         return;
     }
-    
+
     CGPoint newCenter = CGPointMake(gesture.view.center.x + translation.x,
-                                   gesture.view.center.y + translation.y);
+                                    gesture.view.center.y + translation.y);
     self.floatingButton.center = newCenter;
     [gesture setTranslation:CGPointZero inView:self];
-    
+
     if (gesture.state == UIGestureRecognizerStateEnded) {
         [self snapButtonToNearestEdge:self.floatingButton];
         [self startDockTimer];
@@ -163,15 +164,15 @@ static void vibrateDevice() {
     CGPoint newCenter = button.center;
     CGFloat screenWidth = self.bounds.size.width;
     CGFloat buttonWidth = buttonFrame.size.width;
-    
+
     if (newCenter.x < screenWidth / 2) {
         newCenter.x = buttonWidth / 2;
     } else {
         newCenter.x = screenWidth - buttonWidth / 2;
     }
-    
+
     newCenter.y = MAX(buttonFrame.size.height / 2, MIN(self.bounds.size.height - buttonFrame.size.height / 2, newCenter.y));
-    
+
     [UIView animateWithDuration:0.3 animations:^{
         button.center = newCenter;
     }];
@@ -180,10 +181,10 @@ static void vibrateDevice() {
 - (void)startDockTimer {
     [self.dockTimer invalidate];
     self.dockTimer = [NSTimer scheduledTimerWithTimeInterval:5.0
-                                                    target:self
-                                                  selector:@selector(dockButton)
-                                                  userInfo:nil
-                                                   repeats:NO];
+                                                      target:self
+                                                    selector:@selector(dockButton)
+                                                    userInfo:nil
+                                                     repeats:NO];
 }
 
 - (void)resetDockTimer {
@@ -194,25 +195,21 @@ static void vibrateDevice() {
 
 - (void)dockButton {
     if (self.isDocked) return;
-    
     self.isDocked = YES;
-    
+
     CGRect buttonFrame = self.floatingButton.frame;
     CGRect handleFrame = self.handleView.frame;
-    
     BOOL isLeftEdge = self.floatingButton.center.x < self.bounds.size.width / 2;
     CGFloat handleX = isLeftEdge ? 0 : self.bounds.size.width - handleFrame.size.width;
-    
     handleFrame.origin = CGPointMake(handleX, buttonFrame.origin.y + (buttonFrame.size.height - handleFrame.size.height)/2);
     self.handleView.frame = handleFrame;
-    
+
     [UIView animateWithDuration:0.3 animations:^{
         self.floatingButton.alpha = 0;
         self.floatingButton.transform = CGAffineTransformMakeScale(0.5, 0.5);
     } completion:^(BOOL finished) {
         self.floatingButton.hidden = YES;
         self.handleView.hidden = NO;
-        
         [UIView animateWithDuration:0.2 animations:^{
             self.handleView.alpha = 1;
         }];
@@ -221,17 +218,16 @@ static void vibrateDevice() {
 
 - (void)undockButton {
     if (!self.isDocked) return;
-    
     self.isDocked = NO;
+
     self.floatingButton.hidden = NO;
-    
+
     BOOL isLeftEdge = self.handleView.frame.origin.x < self.bounds.size.width / 2;
     CGPoint buttonCenter = self.handleView.center;
-    buttonCenter.x = isLeftEdge ? self.handleView.frame.size.width + self.floatingButton.frame.size.width/2 : 
-                                 self.bounds.size.width - self.handleView.frame.size.width - self.floatingButton.frame.size.width/2;
-    
+    buttonCenter.x = isLeftEdge ? self.handleView.frame.size.width + self.floatingButton.frame.size.width/2 :
+                                  self.bounds.size.width - self.handleView.frame.size.width - self.floatingButton.frame.size.width/2;
     self.floatingButton.center = buttonCenter;
-    
+
     [UIView animateWithDuration:0.3 animations:^{
         self.handleView.alpha = 0;
         self.floatingButton.alpha = 1;
@@ -243,6 +239,14 @@ static void vibrateDevice() {
 }
 
 - (void)showButton {
+    // PATCH: re-attach the window to the currently active scene
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if ([scene isKindOfClass:[UIWindowScene class]] &&
+            scene.activationState == UISceneActivationStateForegroundActive) {
+            self.windowScene = (UIWindowScene *)scene;
+            break;
+        }
+    }
     self.hidden = NO;
     [self makeKeyAndVisible];
     if (!self.isDocked) {
@@ -255,18 +259,17 @@ static void vibrateDevice() {
     [self.dockTimer invalidate];
 }
 
-
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     CGPoint buttonPoint = [self convertPoint:point toView:self.floatingButton];
     if (!self.floatingButton.hidden && [self.floatingButton pointInside:buttonPoint withEvent:event]) {
         return [super hitTest:point withEvent:event];
     }
-    
+
     CGPoint handlePoint = [self convertPoint:point toView:self.handleView];
     if (!self.handleView.hidden && [self.handleView pointInside:handlePoint withEvent:event]) {
         return [super hitTest:point withEvent:event];
     }
-    
+
     return nil;
 }
 
@@ -278,6 +281,7 @@ static void vibrateDevice() {
         [UIView animateWithDuration:0.1 animations:^{
             self.floatingButton.transform = CGAffineTransformIdentity;
         }];
+
         [[NSUserDefaults standardUserDefaults] setBool:!self.isImmortalized forKey:@"immortalized"];
         self.isImmortalized = !self.isImmortalized;
         notify_post("com.sergy.immortalizerjailed.updateprefs");
@@ -301,9 +305,8 @@ static void vibrateDevice() {
         [self stopTimer];
     }
 
-    CustomToastView *toastView = [[CustomToastView alloc] initWithTitle:appName subtitle:subtitle 
-                                    icon:[UIImage systemImageNamed:icon] autoHide:3.0];
-
+    CustomToastView *toastView = [[CustomToastView alloc] initWithTitle:appName subtitle:subtitle
+                                                                   icon:[UIImage systemImageNamed:icon] autoHide:3.0];
     [toastView presentToastInViewController:self.rootViewController];
 }
 
@@ -324,7 +327,6 @@ static void vibrateDevice() {
 
 - (void)startTimer {
     [self.timer invalidate];
-    
     self.timer = [NSTimer scheduledTimerWithTimeInterval:1.0
                                                   target:self
                                                 selector:@selector(timerFired)
@@ -343,11 +345,13 @@ static void vibrateDevice() {
 }
 
 - (void)startPlayingSilentAudio {
+    // PATCH: don't rebuild the audio session and player every second
+    if (self.audioPlayer.isPlaying) return;
+
     [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
     [[AVAudioSession sharedInstance] setActive:YES error:nil];
 
     NSData *audioData = [[NSData alloc] initWithBase64EncodedString:kBase64Audio options:NSDataBase64DecodingIgnoreUnknownCharacters];
-
     self.audioPlayer = [[AVAudioPlayer alloc] initWithData:audioData error:nil];
     self.audioPlayer.volume = 0.0; /* no sound should be made */
     [self.audioPlayer prepareToPlay];
