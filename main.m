@@ -199,4 +199,41 @@ static void setup() {
         hookMethod(objc_getClass("UNUserNotificationCenter"), @selector(setDelegate:), (IMP)hook_setDelegate, (void **)&orig_setDelegate);
 
         // 4. Drop "leaving" notifications while immortalized
-        Class ncClass
+        Class ncClass = objc_getClass("NSNotificationCenter");
+        hookMethod(ncClass, @selector(postNotification:), (IMP)hook_postNotification, (void **)&orig_postNotification);
+        hookMethod(ncClass, @selector(postNotificationName:object:), (IMP)hook_postNameObject, (void **)&orig_postNameObject);
+        hookMethod(ncClass, @selector(postNotificationName:object:userInfo:), (IMP)hook_postNameObjectInfo, (void **)&orig_postNameObjectInfo);
+
+        // 5. Ignore pause / audio session off while leaving
+        Class playerClass = objc_getClass("AVPlayer");
+        hookMethod(playerClass, @selector(pause), (IMP)hook_pause, (void **)&orig_pause);
+        hookMethod(playerClass, @selector(setRate:), (IMP)hook_setRate, (void **)&orig_setRate);
+
+        Class sessionClass = objc_getClass("AVAudioSession");
+        hookMethod(sessionClass, @selector(setActive:error:), (IMP)hook_setActive, (void **)&orig_setActive);
+        hookMethod(sessionClass, @selector(setActive:withOptions:error:), (IMP)hook_setActiveOpts, (void **)&orig_setActiveOpts);
+
+        // 6. Track foreground state
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:nil usingBlock:^(NSNotification * _Nonnull note) {
+            isPhysicallyInBackground = NO;
+        }];
+
+        // PATCH: when the app comes back, reset state and re-show the floating button
+        void (^reactivated)(NSNotification *) = ^(NSNotification * _Nonnull note) {
+            appInactive = NO;
+            isPhysicallyInBackground = NO;
+            [[FloatingButtonWindow sharedInstance] showButton];
+        };
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil usingBlock:reactivated];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UISceneDidActivateNotification object:nil queue:nil usingBlock:reactivated];
+
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)prefsChanged, CFSTR("com.sergy.immortalizerjailed.updateprefs"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+
+        [[FloatingButtonWindow sharedInstance] showButton];
+    });
+}
+
+__attribute__((constructor)) static void initialize() {
+    prefsChanged();
+    setup();
+}
