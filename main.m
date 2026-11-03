@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <objc/runtime.h>
 #import <UserNotifications/UserNotifications.h>
+#import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 #import <dlfcn.h>
 #import "FloatingButtonWindow.h"
@@ -24,6 +25,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 static BOOL isImmortalized;
 static BOOL isPhysicallyInBackground = NO;
+static BOOL appInactive = NO;
 
 static void prefsChanged() {
     isImmortalized = [[NSUserDefaults standardUserDefaults] boolForKey:@"immortalized"];
@@ -112,14 +114,17 @@ static void hook_setDelegate(id self, SEL _cmd, id<UNUserNotificationCenterDeleg
 static BOOL shouldDrop(NSString *name) {
     if (!isImmortalized || !name) return NO;
 
+    BOOL leaving = [name isEqualToString:UIApplicationWillResignActiveNotification] ||
+                   [name isEqualToString:UIApplicationDidEnterBackgroundNotification] ||
+                   [name isEqualToString:UISceneWillDeactivateNotification] ||
+                   [name isEqualToString:UISceneDidEnterBackgroundNotification];
+    if (!leaving) return NO;
+
+    appInactive = YES;
     if ([name isEqualToString:UIApplicationDidEnterBackgroundNotification]) {
         isPhysicallyInBackground = YES;
-        return YES;
     }
-
-    return [name isEqualToString:UIApplicationWillResignActiveNotification] ||
-           [name isEqualToString:UISceneWillDeactivateNotification] ||
-           [name isEqualToString:UISceneDidEnterBackgroundNotification];
+    return YES;
 }
 
 static void (*orig_postNotification)(id, SEL, NSNotification *);
@@ -138,6 +143,32 @@ static void (*orig_postNameObjectInfo)(id, SEL, NSNotificationName, id, NSDictio
 static void hook_postNameObjectInfo(id self, SEL _cmd, NSNotificationName name, id obj, NSDictionary *info) {
     if (shouldDrop(name)) return;
     orig_postNameObjectInfo(self, _cmd, name, obj, info);
+}
+
+// MARK: - Ignore pause / audio session off while the app is leaving
+
+static void (*orig_pause)(id, SEL);
+static void hook_pause(id self, SEL _cmd) {
+    if (isImmortalized && appInactive) return;
+    orig_pause(self, _cmd);
+}
+
+static void (*orig_setRate)(id, SEL, float);
+static void hook_setRate(id self, SEL _cmd, float rate) {
+    if (isImmortalized && appInactive && rate == 0) return;
+    orig_setRate(self, _cmd, rate);
+}
+
+static BOOL (*orig_setActive)(id, SEL, BOOL, NSError **);
+static BOOL hook_setActive(id self, SEL _cmd, BOOL active, NSError **err) {
+    if (isImmortalized && appInactive && !active) return YES;
+    return orig_setActive(self, _cmd, active, err);
+}
+
+static BOOL (*orig_setActiveOpts)(id, SEL, BOOL, NSUInteger, NSError **);
+static BOOL hook_setActiveOpts(id self, SEL _cmd, BOOL active, NSUInteger opts, NSError **err) {
+    if (isImmortalized && appInactive && !active) return YES;
+    return orig_setActiveOpts(self, _cmd, active, opts, err);
 }
 
 // MARK: - Setup
@@ -168,35 +199,4 @@ static void setup() {
         hookMethod(objc_getClass("UNUserNotificationCenter"), @selector(setDelegate:), (IMP)hook_setDelegate, (void **)&orig_setDelegate);
 
         // 4. Drop "leaving" notifications while immortalized
-        Class ncClass = objc_getClass("NSNotificationCenter");
-        hookMethod(ncClass, @selector(postNotification:), (IMP)hook_postNotification, (void **)&orig_postNotification);
-        hookMethod(ncClass, @selector(postNotificationName:object:), (IMP)hook_postNameObject, (void **)&orig_postNameObject);
-        hookMethod(ncClass, @selector(postNotificationName:object:userInfo:), (IMP)hook_postNameObjectInfo, (void **)&orig_postNameObjectInfo);
-
-        // 5. Track physical background state via native notifications
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil usingBlock:^(NSNotification * _Nonnull note) {
-            isPhysicallyInBackground = YES;
-        }];
-
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:nil usingBlock:^(NSNotification * _Nonnull note) {
-            isPhysicallyInBackground = NO;
-        }];
-
-        // PATCH: when the app comes back, reset state and re-show the floating button
-        void (^reactivated)(NSNotification *) = ^(NSNotification * _Nonnull note) {
-            isPhysicallyInBackground = NO;
-            [[FloatingButtonWindow sharedInstance] showButton];
-        };
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil usingBlock:reactivated];
-        [[NSNotificationCenter defaultCenter] addObserverForName:UISceneDidActivateNotification object:nil queue:nil usingBlock:reactivated];
-
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)prefsChanged, CFSTR("com.sergy.immortalizerjailed.updateprefs"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
-
-        [[FloatingButtonWindow sharedInstance] showButton];
-    });
-}
-
-__attribute__((constructor)) static void initialize() {
-    prefsChanged();
-    setup();
-}
+        Class ncClass
