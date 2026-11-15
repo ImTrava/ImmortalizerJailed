@@ -26,9 +26,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 static BOOL isImmortalized;
 static BOOL isPhysicallyInBackground = NO;
 static BOOL appInactive = NO;
+static BOOL replaying = NO;
 
 static void prefsChanged() {
     isImmortalized = [[NSUserDefaults standardUserDefaults] boolForKey:@"immortalized"];
+}
+
+static BOOL isTikTok() {
+    static BOOL result;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
+        result = [bid isEqualToString:@"com.zhiliaoapp.musically"];
+    });
+    return result;
 }
 
 static void (*original_sceneID_updateWithSettingsDiff_transitionContext_completion)(id, SEL, id, id, id, id);
@@ -171,6 +182,17 @@ static BOOL hook_setActiveOpts(id self, SEL _cmd, BOOL active, NSUInteger opts, 
     return orig_setActiveOpts(self, _cmd, active, opts, err);
 }
 
+// MARK: - A touch means the app is in the foreground, so clear any stuck "leaving" state
+
+static void (*orig_sendEvent)(id, SEL, UIEvent *);
+static void hook_sendEvent(id self, SEL _cmd, UIEvent *event) {
+    if (event.type == UIEventTypeTouches && (appInactive || isPhysicallyInBackground)) {
+        appInactive = NO;
+        isPhysicallyInBackground = NO;
+    }
+    orig_sendEvent(self, _cmd, event);
+}
+
 // MARK: - Setup
 
 static void hookMethod(Class cls, SEL sel, IMP newImp, void **origOut) {
@@ -192,8 +214,10 @@ static void setup() {
             method_setImplementation(originalMethod, (IMP)new_sceneID_updateWithSettingsDiff_transitionContext_completion);
         }
 
-        // 2. Application State Hook
-        hookMethod(objc_getClass("UIApplication"), @selector(applicationState), (IMP)hook_applicationState, (void **)&orig_applicationState);
+        // 2. Application State + touch hooks
+        Class uiAppClass = objc_getClass("UIApplication");
+        hookMethod(uiAppClass, @selector(applicationState), (IMP)hook_applicationState, (void **)&orig_applicationState);
+        hookMethod(uiAppClass, @selector(sendEvent:), (IMP)hook_sendEvent, (void **)&orig_sendEvent);
 
         // 3. Notification Delegate Hook
         hookMethod(objc_getClass("UNUserNotificationCenter"), @selector(setDelegate:), (IMP)hook_setDelegate, (void **)&orig_setDelegate);
@@ -218,11 +242,19 @@ static void setup() {
             isPhysicallyInBackground = NO;
         }];
 
-        // PATCH: when the app comes back, reset state and re-show the floating button
+        // PATCH: when the app comes back, reset state and re-show the floating button.
+        // In TikTok only, also tell the app it is back so its video restarts.
         void (^reactivated)(NSNotification *) = ^(NSNotification * _Nonnull note) {
+            BOOL wasLeft = appInactive;
             appInactive = NO;
             isPhysicallyInBackground = NO;
             [[FloatingButtonWindow sharedInstance] showButton];
+            if (wasLeft && isImmortalized && !replaying && isTikTok()) {
+                replaying = YES;
+                [[NSNotificationCenter defaultCenter] postNotificationName:UIApplicationWillEnterForegroundNotification object:[UIApplication sharedApplication]];
+                [[NSNotificationCenter defaultCenter] postNotificationName:UIApplicationDidBecomeActiveNotification object:[UIApplication sharedApplication]];
+                replaying = NO;
+            }
         };
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil usingBlock:reactivated];
         [[NSNotificationCenter defaultCenter] addObserverForName:UISceneDidActivateNotification object:nil queue:nil usingBlock:reactivated];
